@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tree Growth Animation</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+    body {
+      background: #f8f8f8;
+      font-family: "Myriad Pro", sans-serif;
+      text-align: center;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  <script>
+    var canvas = document.getElementById('canvas');
+    var ctx = canvas.getContext('2d');
+    var width = canvas.width;
+    var height = canvas.height;
+
+    ctx.fillStyle = '#6F4E37'; // Initial color for the base branches
+
+    // Growth rate and tree size parameters
+    var growthRate = 80;
+    var maxTreeSize = 400;
+
+    // Tree object
+    var tree = {
+      size: 1,
+      position: 0,
+      direction: 0
+    };
+
+    // Arrays to hold positions of branches and leaves
+    var branches = [];
+    var leaves = [];
+
+    // The threshold to keep leaves above 1/4 of the tree height
+    var leafThreshold = height / 5;
+
+    // Frame counter to measure every 100 frames
+    var frameCount = 0;
+
+    // Function to draw the tree branch recursively
+    function drawBranch(startPoint, direction, node) {
+      // Set color based on size (younger branches are greener)
+      ctx.fillStyle = "hsl(" + (30 + ((maxTreeSize - node.size) / 10)) + ", 84%, 32%)";
+
+      // Draw the branch as a triangle
+      var base = node.size * 0.03;
+      var height = node.size;
+      ctx.beginPath();
+      ctx.moveTo(startPoint.x + Math.cos(direction + Math.PI / 2) * base, startPoint.y + Math.sin(direction + Math.PI / 2) * base);
+      ctx.lineTo(startPoint.x + Math.cos(direction) * -height, startPoint.y + Math.sin(direction) * -height);
+      ctx.lineTo(startPoint.x + Math.cos(direction - Math.PI / 2) * base, startPoint.y + Math.sin(direction - Math.PI / 2) * base);
+      ctx.fill();
+
+      // Save branch position for leaf generation
+      branches.push({ x: startPoint.x + Math.cos(direction) * -height, y: startPoint.y + Math.sin(direction) * -height });
+
+      // Loosely place leaves around the branch if its size is large enough
+      if (node.size > 30) {
+        var numLeaves = Math.floor(Math.random() * 3 + 1); // 1–3 leaves per branch
+        for (var i = 0; i < numLeaves; i++) {
+          var angleOffset = Math.random() * Math.PI * 2; // Full circle for placement
+          var radius = Math.random() * 50 + 10; // Random radius (10 to 60 pixels away from branch tip)
+          var leafX = startPoint.x + Math.cos(direction) * -height + Math.cos(angleOffset) * radius;
+          var leafY = startPoint.y + Math.sin(direction) * -height + Math.sin(angleOffset) * radius;
+
+          // Ensure leaf stays above the 1/4 height threshold
+          if (leafY < leafThreshold) {
+            continue; // Skip placing this leaf if it's below the threshold
+          }
+
+          // Check if the new leaf is close to any existing leaf, to make it touch another leaf
+          var isNearLeaf = false;
+          for (let j = 0; j < leaves.length; j++) {
+            var dist = Math.sqrt(Math.pow(leafX - leaves[j].x, 2) + Math.pow(leafY - leaves[j].y, 2));
+            if (dist < 15) {  // If the distance between leaves is less than 15 pixels, they will touch
+              isNearLeaf = true;
+              break;
+            }
+          }
+
+          // If the leaf is not near another leaf, check if it's near the branch or another leaf
+          if (!isNearLeaf) {
+            // Random opacity between 0.2 and 1
+            var opacity = Math.random() * 0.8 + 0.2;
+
+            // Store the leaf position, size, and color with opacity
+            leaves.push({
+              x: leafX,
+              y: leafY,
+              size: Math.random() * 4 + 3,
+              color: `rgba(34, 139, 34, ${opacity})`  // Using "forest green" color with random opacity
+            });
+          }
+        }
+      }
+
+      // Recursively draw sub-branches
+      if (node.branches) {
+        node.branches.forEach((branch) => {
+          var positionInBranch = branch.position + (height - branch.position) * 0.2;
+          drawBranch({
+            x: startPoint.x + Math.cos(direction) * -positionInBranch,
+            y: startPoint.y + Math.sin(direction) * -positionInBranch
+          }, direction + branch.direction, branch);
+        });
+      }
+    }
+
+    // Function to handle the growth of branches and sub-branches
+    function branchPlusGrowth(branch, growth) {
+      if (!branch.branches) {
+        branch.size += growth;
+        // Add the first sub-branch when the main branch reaches a size threshold
+        if (branch.size > 30) {
+          branch.branches = [{
+            size: 1,
+            position: (Math.random() * 10) + 10,
+            direction: oneWayOrAnother() * randomizeDirection()
+          }];
+        }
+      } else {
+        var mainBranchGrowth = growth / (1.5 * (branch.branches.length + 1));
+        branch.size += mainBranchGrowth;
+        var branchGrowth = (growth - mainBranchGrowth) / (branch.branches.length);
+        branch.branches.forEach((subBranch) => {
+          subBranch = branchPlusGrowth(subBranch, branchGrowth);
+        });
+
+        // Add new branches occasionally when the current ones reach a certain size
+        var lastBranch = branch.branches[branch.branches.length - 1];
+        if (branch.size - lastBranch.position > 70) {
+          branch.branches.push({
+            size: 1,
+            position: randomBetween(lastBranch.position * 1.2, branch.size * 0.8),
+            direction: otherWayKinda(lastBranch.direction) * randomizeDirection()
+          });
+        }
+      }
+      // Remove leaves below threshold when the tree grows
+      removeLeavesBelowThreshold();
+      return branch;
+    }
+
+    // Helper functions to randomize direction and growth
+    function oneWayOrAnother() {
+      return Math.random() > 0.5 ? 1 : -1;
+    }
+
+    function otherWayKinda(oneWay) {
+      return (oneWay > 0 ? -1 : 1) * (Math.random() > 0.9 ? -1 : 1);
+    }
+
+    function randomizeDirection() {
+      return randomBetween(Math.PI / 8, 3.5 * Math.PI / 8);
+    }
+
+    function randomBetween(lowerValue, higherValue) {
+      return (Math.random() * (higherValue - lowerValue)) + lowerValue;
+    }
+
+    // Function to remove leaves below the threshold
+    function removeLeavesBelowThreshold() {
+      var treeHeight = tree.size;
+      leaves = leaves.filter(leaf => leaf.y <= height - (treeHeight / 5));  // Remove leaves below 1/4 height
+    }
+
+    // Main render loop
+    var time = new Date().getTime();
+    function draw() {
+      var newTime = new Date().getTime();
+      var timeDiff = newTime - time;
+      time = newTime;
+      var growth = timeDiff / 1000 * growthRate;
+
+      tree = branchPlusGrowth(tree, growth);
+
+      // Clear canvas and draw sky
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#87CEEB'; // Sky color
+      ctx.fillRect(0, 0, width, height);
+
+      // Draw the tree
+      drawBranch({ x: width / 2, y: height }, Math.PI / 2, tree);
+
+      // Draw all the leaves with their random opacity
+      leaves.forEach(leaf => {
+        ctx.beginPath();
+        ctx.arc(leaf.x, leaf.y, leaf.size, 0, Math.PI * 2);
+        ctx.fillStyle = leaf.color; // Set color with random opacity
+        ctx.fill();
+      });
+
+      // Stop animation when tree reaches max size
+      if (tree.size < maxTreeSize) {
+        window.requestAnimationFrame(draw);
+      }
+    }
+
+    // Start the animation
+    window.requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
